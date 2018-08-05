@@ -7,7 +7,8 @@ const internalSharedData = {
   recordVuex: true,
   cacheVuexSnapshotsEvery: 50,
   cacheVuexSnapshotsLimit: 10,
-  snapshotLoading: null
+  snapshotLoading: null,
+  recordPerf: false
 }
 
 const persisted = [

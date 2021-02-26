@@ -96,6 +96,15 @@ export function editState ({ state }, { path, args }) {
   })
 }
 
+export function changeStore ({ state, commit }, index) {
+  if (state.inspectedStoreIndex === index) {
+    return
+  }
+
+  bridge.send('vuex:change-store', index - 1)
+  commit('CHANGE_STORE', index)
+}
+
 function travelTo (state, commit, index, apply = true) {
   return new Promise((resolve) => {
     Resolve.travel = resolve

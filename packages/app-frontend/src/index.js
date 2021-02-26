@@ -147,6 +147,7 @@ function initApp (shell) {
       })
 
       bridge.on('vuex:init', () => {
+        console.log('FE vuex/init')
         store.commit('vuex/INIT')
       })
 

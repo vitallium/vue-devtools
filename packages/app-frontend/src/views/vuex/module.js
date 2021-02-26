@@ -23,12 +23,15 @@ const state = {
   filterRegexInvalid: false,
   inspectedState: null,
   lastReceivedState: null,
-  inspectedModule: null
+  inspectedModule: null,
+  storeCount: 0,
+  inspectedStoreIndex: 0
 }
 
 const mutations = {
   'INIT' (state) {
     state.hasVuex = true
+    state.storeCount++
     snapshotsCache.reset()
     reset(state)
   },
@@ -115,6 +118,10 @@ const mutations = {
 
   'INSPECTED_MODULE' (state, module) {
     state.inspectedModule = module
+  },
+
+  'CHANGE_STORE' (state, index) {
+    state.inspectedStoreIndex = index
   }
 }
 

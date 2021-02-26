@@ -12,6 +12,8 @@ import MyClass from './MyClass.js'
 import router from './router'
 import TransitionExample from './TransitionExample.vue'
 import Router from './router/Router.vue'
+import Second from './Random.vue'
+import secondStore from './second-store.js'
 
 window.VUE_DEVTOOLS_CONFIG = {
   openInEditorHost: '/'
@@ -50,8 +52,16 @@ const app = new Vue({
   }
 })
 
+const secondApp = new Vue({
+  store: secondStore,
+  render (createElement) {
+    return createElement(Second)
+  }
+})
+
 window.addEventListener('load', () => {
   app.$mount('#app')
+  secondApp.$mount('#second-app')
 })
 
 // custom element instance

@@ -12,32 +12,34 @@ class VuexBackend {
     this.hook = hook
     this.bridge = bridge
     this.isLegacy = isLegacy
-    this.store = hook.store
+    this.selectedStoreIndex = 0
+    this.stores = hook.stores
+    this.currentStore = this.stores[this.selectedStoreIndex]
 
     // Flush info from hook
     // (for example, modules registered before backend was created)
-    this.earlyModules = hook.flushStoreModules()
+    this.currentStore.earlyModules = this.currentStore.flushStoreModules()
 
     /** Initial store state */
-    this.initialState = this.hook.initialState
+    // thinitialState = this.currentStore.initialState
 
     /** Internal store vm for mutation replaying */
-    this.snapshotsVm = null
+    this.currentStore.snapshotsVm = null
 
     /** Initial snapshot */
-    this.baseStateSnapshot = null
+    this.currentStore.baseStateSnapshot = null
     /** Snapshot cache */
-    this.stateSnapshotCache = null
+    this.currentStore.stateSnapshotCache = null
     /** Mutation history */
-    this.mutations = null
+    this.currentStore.mutations = null
     /** Last replayed state */
-    this.lastState = null
+    this.currentStore.lastState = null
     /** Currently registered dynamic modules */
-    this.registeredModules = {}
+    this.currentStore.registeredModules = {}
     /** All dynamic modules ever registered, useful for mutation replaying */
-    this.allTimeModules = {}
+    this.currentStore.allTimeModules = {}
     /** Legacy base state */
-    this.legacyBaseSnapshot = null
+    this.currentStore.legacyBaseSnapshot = null
 
     // First-time snapshot VM creation
     this.resetSnapshotsVm()
@@ -45,26 +47,26 @@ class VuexBackend {
     this.reset()
 
     // Override dynamic module handling in vuex
-    if (this.store.registerModule) {
-      this.origRegisterModule = this.store.registerModule.bind(this.store)
-      this.store.registerModule = (path, module, options) => {
+    if (this.currentStore.registerModule) {
+      this.currentStore.origRegisterModule = this.currentStore.registerModule.bind(this.store)
+      this.currentStore.registerModule = (path, module, options) => {
         this.addModule(path, module, options)
         this.origRegisterModule(path, module, options)
         if (!isProd) console.log('register module', path)
       }
 
-      this.origUnregisterModule = this.store.unregisterModule.bind(this.store)
-      this.store.unregisterModule = (path) => {
+      this.currentStore.origUnregisterModule = this.currentStore.unregisterModule.bind(this.store)
+      this.currentStore.unregisterModule = (path) => {
         this.removeModule(path)
         this.origUnregisterModule(path)
         if (!isProd) console.log('unregister module', path)
       }
     } else {
-      this.origRegisterModule = this.origUnregisterModule = () => {}
+      this.currentStore.origRegisterModule = this.origUnregisterModule = () => {}
     }
 
     // Register modules that were added before backend was created
-    this.earlyModules.forEach(({ path, module, options }) => {
+    this.currentStore.earlyModules.forEach(({ path, module, options }) => {
       const moduleInfo = this.addModule(path, module, options)
       moduleInfo.early = true
     })
@@ -84,6 +86,7 @@ class VuexBackend {
     bridge.on('vuex:import-state', this.onImportState.bind(this))
     bridge.on('vuex:inspect-state', this.onInspectState.bind(this))
     bridge.on('vuex:edit-state', this.onEditState.bind(this))
+    bridge.on('vuex:change-store', this.onChangeStore.bind(this))
   }
 
   /**
@@ -100,19 +103,19 @@ class VuexBackend {
    */
   onTravelToState ({ index, apply }) {
     const snapshot = this.replayMutations(index)
-    const state = clone(this.lastState)
+    const state = clone(this.currentStore.lastState)
     this.bridge.send('vuex:inspected-state', {
       index,
       snapshot
     })
     if (apply) {
-      this.ensureRegisteredModules(this.mutations[index])
+      this.ensureRegisteredModules(this.currentStore.mutations[index])
       this.hook.emit('vuex:travel-to-state', state)
     }
   }
 
   onCommitAll () {
-    this.reset(this.lastState)
+    this.reset(this.currentStore.lastState)
   }
 
   onRevertAll () {
@@ -126,13 +129,13 @@ class VuexBackend {
    */
   onCommit (index) {
     if (SharedData.vuexNewBackend) {
-      this.baseStateSnapshot = this.lastState
+      this.currentStore.baseStateSnapshot = this.currentStore.lastState
     } else {
-      this.legacyBaseSnapshot = this.mutations[index].snapshot
+      this.currentStore.legacyBaseSnapshot = this.currentStore.mutations[index].snapshot
     }
     this.resetSnapshotCache()
-    this.mutations = this.mutations.slice(index + 1)
-    this.mutations.forEach((mutation, index) => {
+    this.currentStore.mutations = this.currentStore.mutations.slice(index + 1)
+    this.currentStore.mutations.forEach((mutation, index) => {
       mutation.index = index
     })
   }
@@ -144,8 +147,8 @@ class VuexBackend {
    */
   onRevert (index) {
     this.resetSnapshotCache()
-    this.ensureRegisteredModules(this.mutations[index - 1])
-    this.mutations = this.mutations.slice(0, index)
+    this.ensureRegisteredModules(this.currentStore.mutations[index - 1])
+    this.currentStore.mutations = this.currentStore.mutations.slice(0, index)
   }
 
   /**
@@ -187,16 +190,23 @@ class VuexBackend {
     this.cacheStateSnapshot(index, true)
   }
 
+  onChangeStore(index) {
+    this.selectedStoreIndex = index
+    this.currentStore = this.stores[this.selectedStoreIndex]
+    console.log(this.currentStore)
+    this.onInspectState(-1)
+  }
+
   /**
    * Should be called when store structure changes,
    * for example when a dynamic module is registered
    */
   resetSnapshotsVm (state) {
-    this.snapshotsVm = new Vue({
+    this.currentStore.snapshotsVm = new Vue({
       data: {
         $$state: state || {}
       },
-      computed: this.store._vm.$options.computed
+      computed: this.currentStore._vm.$options.computed
     })
   }
 
@@ -205,11 +215,11 @@ class VuexBackend {
    */
   reset (stateSnapshot = null) {
     if (SharedData.vuexNewBackend) {
-      this.baseStateSnapshot = stateSnapshot || clone(this.initialState)
+      this.currentStore.baseStateSnapshot = stateSnapshot || clone(this.currentStore.initialState)
     } else {
-      this.legacyBaseSnapshot = this.stringifyStore()
+      this.currentStore.legacyBaseSnapshot = this.stringifyStore()
     }
-    this.mutations = []
+    this.currentStore.mutations = []
     this.resetSnapshotCache()
   }
 
@@ -231,7 +241,7 @@ class VuexBackend {
 
     let state
     if (options && options.preserveState) {
-      state = get(this.store.state, path)
+      state = get(this.currentStore.store.state, path)
     }
     if (!state) {
       state = typeof module.state === 'function' ? module.state() : module.state
@@ -263,7 +273,7 @@ class VuexBackend {
     }
 
     const key = path.join('/')
-    const moduleInfo = this.registeredModules[key] = this.allTimeModules[key] = {
+    const moduleInfo = this.currentStore.registeredModules[key] = this.currentStore.allTimeModules[key] = {
       path,
       module: fakeModule,
       options: {
@@ -341,9 +351,9 @@ class VuexBackend {
 
   stringifyStore () {
     return stringify({
-      state: this.store.state,
-      getters: getCatchedGetters(this.store),
-      modules: Object.keys(this.store._modulesNamespaceMap || {})
+      state: this.currentStore.state,
+      getters: getCatchedGetters(this.currentStore),
+      modules: Object.keys(this.currentStore._modulesNamespaceMap || {})
         .map(m => m.substr(0, m.length - 1))
         .sort()
     })
@@ -353,18 +363,18 @@ class VuexBackend {
    * Handle a new mutation commited to the store
    */
   addMutation (type, payload, options = {}) {
-    const index = this.mutations.length
+    const index = this.currentStore.mutations.length
 
     if (!SharedData.vuexNewBackend) {
       options.snapshot = this.stringifyStore()
     }
 
-    this.mutations.push({
+    this.currentStore.mutations.push({
       type,
       payload: SharedData.vuexNewBackend ? clone(payload) : null,
       index,
-      handlers: this.store._mutations[type],
-      registeredModules: Object.keys(this.registeredModules),
+      handlers: this.currentStore._mutations[type],
+      registeredModules: Object.keys(this.currentStore.registeredModules),
       ...options
     })
 
@@ -384,15 +394,16 @@ class VuexBackend {
    * to re-create what the vuex state should be at this point
    */
   replayMutations (index) {
+    console.log(this)
     if (!SharedData.vuexNewBackend) {
-      const snapshot = index === -1 ? this.legacyBaseSnapshot : this.mutations[index].snapshot
-      this.lastState = parse(snapshot, true).state
+      const snapshot = index === -1 ? this.currentStore.legacyBaseSnapshot : this.currentStore.store._mutations[index].snapshot
+      this.currentStore.store.lastState = parse(snapshot, true).state
       return snapshot
     }
 
-    const originalVm = this.store._vm
-    const originalState = clone(this.store.state)
-    this.store._vm = this.snapshotsVm
+    const originalVm = this.currentStore.store._vm
+    const originalState = clone(this.currentStore.store.state)
+    this.currentStore.store._vm = this.currentStore.snapshotsVm
 
     let tempRemovedModules = []
     let tempAddedModules = []
@@ -400,7 +411,7 @@ class VuexBackend {
     // If base state, we need to remove all dynamic registered modules
     // to prevent errors because their state is missing
     if (index === -1) {
-      tempRemovedModules = Object.keys(this.registeredModules)
+      tempRemovedModules = Object.keys(this.currentStore.store.registeredModules)
       tempRemovedModules.filter(m => this.hasModule(m.split('/'))).sort((a, b) => b.length - a.length).forEach(m => {
         this.origUnregisterModule(m.split('/'))
         if (!isProd) console.log('before replay unregister', m)

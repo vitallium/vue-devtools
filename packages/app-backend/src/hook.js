@@ -17,6 +17,8 @@ export function installHook (target) {
   const hook = {
     Vue: null,
 
+    stores: [],
+
     _buffer: [],
 
     _replayBuffer (event) {
@@ -96,22 +98,20 @@ export function installHook (target) {
     }
   })
 
-  hook.once('vuex:init', store => {
-    hook.store = store
-    hook.initialState = clone(store.state)
+  hook.on('vuex:init', store => {
     const origReplaceState = store.replaceState.bind(store)
     store.replaceState = state => {
-      hook.initialState = clone(state)
+      store.initialState = clone(state)
       origReplaceState(state)
     }
     // Dynamic modules
     let origRegister, origUnregister
     if (store.registerModule) {
-      hook.storeModules = []
+      store.storeModules = []
       origRegister = store.registerModule.bind(store)
       store.registerModule = (path, module, options) => {
         if (typeof path === 'string') path = [path]
-        hook.storeModules.push({ path, module, options })
+        store.storeModules.push({ path, module, options })
         origRegister(path, module, options)
         if (process.env.NODE_ENV !== 'production') console.log('early register module', path, module, options)
       }
@@ -119,20 +119,23 @@ export function installHook (target) {
       store.unregisterModule = (path) => {
         if (typeof path === 'string') path = [path]
         const key = path.join('/')
-        const index = hook.storeModules.findIndex(m => m.path.join('/') === key)
-        if (index !== -1) hook.storeModules.splice(index, 1)
+        const index = store.storeModules.findIndex(m => m.path.join('/') === key)
+        if (index !== -1) store.storeModules.splice(index, 1)
         origUnregister(path)
         if (process.env.NODE_ENV !== 'production') console.log('early unregister module', path)
       }
     }
-    hook.flushStoreModules = () => {
+    store.flushStoreModules = () => {
       store.replaceState = origReplaceState
       if (store.registerModule) {
         store.registerModule = origRegister
         store.unregisterModule = origUnregister
       }
-      return hook.storeModules || []
+      return store.storeModules || []
     }
+
+    store.initialState = clone(store.state)
+    hook.stores.push(store);
   })
 
   Object.defineProperty(target, '__VUE_DEVTOOLS_GLOBAL_HOOK__', {

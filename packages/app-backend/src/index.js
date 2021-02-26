@@ -135,10 +135,10 @@ function connect (Vue) {
     })
 
     // vuex
-    if (hook.store) {
-      initVuexBackend(hook, bridge, hook.store.commit === undefined)
+    if (hook.stores) {
+      hook.stores.forEach(store => initVuexBackend(hook, bridge, store.commit === undefined))
     } else {
-      hook.once('vuex:init', store => {
+      hook.on('vuex:init', store => {
         initVuexBackend(hook, bridge, store.commit === undefined)
       })
     }

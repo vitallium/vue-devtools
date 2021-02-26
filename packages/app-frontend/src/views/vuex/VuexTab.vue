@@ -1,5 +1,6 @@
 <template>
   <div>
+    <vuex-store-selector />
     <split-pane v-if="hasVuex">
       <vuex-history
         v-if="defer(3)"
@@ -28,12 +29,14 @@ import Defer from '@front/mixins/defer'
 import SplitPane from '@front/components/SplitPane.vue'
 import VuexHistory from './VuexHistory.vue'
 import VuexStateInspector from './VuexStateInspector.vue'
+import VuexStoreSelector from './VuexStoreSelector.vue'
 
 export default {
   components: {
     SplitPane,
     VuexHistory,
-    VuexStateInspector
+    VuexStateInspector,
+    VuexStoreSelector
   },
 
   mixins: [
